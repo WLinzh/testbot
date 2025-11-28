@@ -1,11 +1,21 @@
-import { useState } from "react";
-import { sendChat } from "./api/chat";
+import { useState, useRef, useEffect } from "react";
+import { streamChat } from "./api/chat";
+import MessageContent from "./components/MessageContent";
 import "./App.css";
 
 function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const handleSend = async () => {
     const trimmed = input.trim();
@@ -16,21 +26,41 @@ function App() {
     setInput("");
     setLoading(true);
 
-    try {
-      const reply = await sendChat(newMessages);
-      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
-    } catch (err) {
-      console.error(err);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          content: "Sorry, the server had an issue. Please try again soon."
-        }
-      ]);
-    } finally {
-      setLoading(false);
-    }
+    // Add a placeholder for the assistant's response
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
+    await streamChat(
+      newMessages,
+      (chunk) => {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last.role === "assistant") {
+            return [
+              ...prev.slice(0, -1),
+              { ...last, content: last.content + chunk },
+            ];
+          }
+          return prev;
+        });
+      },
+      () => {
+        setLoading(false);
+      },
+      (err) => {
+        console.error(err);
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          // If the last message was empty (just started), replace it with error
+          // If it had content, maybe append error or just stop.
+          // Let's append a system error note.
+          return [
+            ...prev.slice(0, -1),
+            { ...last, content: last.content + "\n\n*[Error: Connection failed]*" },
+          ];
+        });
+        setLoading(false);
+      }
+    );
   };
 
   const handleKeyDown = (e) => {
@@ -41,72 +71,64 @@ function App() {
   };
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: 16 }}>
-      <h1>Mental Health Chatbot (vLLM @ GCP)</h1>
-
-      <div
-        style={{
-          border: "1px solid #ccc",
-          borderRadius: 8,
-          padding: 12,
-          height: 480,
-          overflowY: "auto",
-          marginBottom: 12
-        }}
-      >
-        {messages.length === 0 && (
-          <div style={{ color: "#777" }}>
-            Share any stress, emotions, or sleep concerns, and I'll help you unpack
-            them.
+    <div className="app">
+      <div className="shell">
+        <div className="header">
+          <div>
+            <div className="eyebrow">AI Companion</div>
+            <h1>Mental Health Chatbot</h1>
+            <p className="subtitle">
+              Share any stress, emotions, or sleep concerns, and I'll help you unpack them.
+            </p>
           </div>
-        )}
-        {messages.map((m, idx) => (
-          <div
-            key={idx}
-            style={{
-              marginBottom: 8,
-              textAlign: m.role === "user" ? "right" : "left"
-            }}
-          >
-            <div
-              style={{
-                display: "inline-block",
-                padding: "6px 10px",
-                borderRadius: 8,
-                background:
-                  m.role === "user" ? "#007bff" : "rgba(0,0,0,0.05)",
-                color: m.role === "user" ? "#fff" : "#000",
-                maxWidth: "80%",
-                whiteSpace: "pre-wrap"
-              }}
-            >
-              {m.content}
+          <div className="badge">vLLM @ GCP</div>
+        </div>
+
+        <div className="chat">
+          {messages.length === 0 && (
+            <div style={{ color: "var(--text-subtle)", textAlign: "center", marginTop: 40 }}>
+              Say hello to start the conversation.
             </div>
-          </div>
-        ))}
-        {loading && (
-          <div style={{ color: "#777", fontStyle: "italic" }}>
-            Assistant is thinking...
-          </div>
-        )}
-      </div>
+          )}
+          {messages.map((m, idx) => (
+            <div
+              key={idx}
+              className={`row ${m.role === "user" ? "row-user" : "row-assistant"}`}
+            >
+              <div className={`bubble ${m.role}`}>
+                {m.role === "user" ? (
+                  <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
+                ) : (
+                  <MessageContent content={m.content} />
+                )}
+              </div>
+            </div>
+          ))}
+          {loading && messages.length > 0 && messages[messages.length - 1].content === "" && (
+            <div className="row row-assistant">
+              <div className="bubble assistant thinking">
+                Thinking
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
 
-      <div>
-        <textarea
-          rows={3}
-          style={{ width: "100%", padding: 8, borderRadius: 8 }}
-          placeholder="Start by describing what's been stressing you. (Enter sends, Shift+Enter adds a new line)"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-        />
-        <button
-          onClick={handleSend}
-          disabled={loading || !input.trim()}
-          style={{ marginTop: 8, padding: "6px 12px" }}
-        >
-          {loading ? "Sending..." : "Send"}
-        </button>
+        <div className="composer">
+          <textarea
+            rows={1}
+            placeholder="Type your message..."
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <button
+            onClick={handleSend}
+            disabled={loading || !input.trim()}
+          >
+            {loading ? "..." : "Send"}
+          </button>
+        </div>
       </div>
     </div>
   );
