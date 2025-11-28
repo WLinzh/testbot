@@ -1,0 +1,31 @@
+steps:
+  # 1. 使用 Google Cloud Buildpacks 构建镜像 (无需 Dockerfile)
+  - name: 'gcr.io/k8s-skaffold/pack'
+    entrypoint: 'pack'
+    args:
+      - 'build'
+      - 'gcr.io/$PROJECT_ID/$REPO_NAME:$COMMIT_SHA'
+      - '--builder=gcr.io/buildpacks/builder:v1'
+      - '--path=.'
+
+  # 2. 将镜像推送到 Google Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/$REPO_NAME:$COMMIT_SHA']
+
+  # 3. 部署到 Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - '$_SERVICE_NAME'  # 这里会自动引用你的服务名称
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/$REPO_NAME:$COMMIT_SHA'
+      - '--region'
+      - '$_REGION'        # 这里会自动引用你的区域
+      - '--platform'
+      - 'managed'
+
+# 4. 修复日志权限错误的关键配置
+options:
+  logging: CLOUD_LOGGING_ONLY
