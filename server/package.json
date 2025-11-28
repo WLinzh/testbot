@@ -1,8 +1,7 @@
-
 {
   "name": "testbot-server",
   "version": "1.0.0",
-  "description": "Node backend for stress management chatbot using gpt-oss:20b",
+  "description": "Node backend for stress management chatbot using TinyLlama/TinyLlama-1.1B-Chat-v1.0",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
@@ -10,8 +9,12 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^16.4.0",
-    "express": "^4.19.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "node-fetch": "^3.3.2",
     "openai": "^4.55.0"
-  }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }
