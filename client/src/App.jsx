@@ -1,136 +1,112 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import './App.css';
-
-const initialAssistantMessage =
-  "Hi, I'm CalmSpace. Share whatever feels heavy right now and I'll listen and offer small, practical steps.";
+import { useState } from "react";
+import { sendChat } from "./api/chat";
+import "./App.css";
 
 function App() {
-  const [messages, setMessages] = useState([
-    { sender: 'assistant', text: initialAssistantMessage },
-  ]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const chatRef = useRef(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const sessionId = useMemo(() => {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-      return crypto.randomUUID();
-    }
-    return `session-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }, []);
+  const handleSend = async () => {
+    const trimmed = input.trim();
+    if (!trimmed || loading) return;
 
-  useEffect(() => {
-    if (chatRef.current) {
-      chatRef.current.scrollTo({
-        top: chatRef.current.scrollHeight,
-        behavior: 'smooth',
-      });
-    }
-  }, [messages, isLoading]);
-
-  const sendMessage = async () => {
-    const text = input.trim();
-    if (!text || isLoading) return;
-
-    const userEntry = { sender: 'user', text };
-    setMessages((prev) => [...prev, userEntry]);
-    setInput('');
-    setError('');
-    setIsLoading(true);
+    const newMessages = [...messages, { role: "user", content: trimmed }];
+    setMessages(newMessages);
+    setInput("");
+    setLoading(true);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          userMessage: text,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Request failed');
-      }
-
-      const data = await response.json();
-      const reply =
-        (typeof data?.reply === 'string' && data.reply.trim()) ||
-        "I'm here to listen. Could we try again in a moment?";
-
-      setMessages((prev) => [...prev, { sender: 'assistant', text: reply }]);
+      const reply = await sendChat(newMessages);
+      setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
     } catch (err) {
-      console.error('Error sending message', err);
-      setError(
-        'I had trouble reaching the server. Please check your connection and try again.'
-      );
+      console.error(err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Sorry, the server had an issue. Please try again soon."
+        }
+      ]);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleKeyDown = (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      sendMessage();
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
     }
   };
 
   return (
-    <div className="app">
-      <div className="shell">
-        <header className="header">
-          <div>
-            <p className="eyebrow">CalmSpace</p>
-            <h1>Stress Listener</h1>
-            <p className="subtitle">
-              A gentle, non-judgmental companion for when you feel overwhelmed.
-              I'm not a clinical tool, but I can listen and share small steps.
-            </p>
+    <div style={{ maxWidth: 720, margin: "0 auto", padding: 16 }}>
+      <h1>Mental Health Chatbot (vLLM @ GCP)</h1>
+
+      <div
+        style={{
+          border: "1px solid #ccc",
+          borderRadius: 8,
+          padding: 12,
+          height: 480,
+          overflowY: "auto",
+          marginBottom: 12
+        }}
+      >
+        {messages.length === 0 && (
+          <div style={{ color: "#777" }}>
+            Share any stress, emotions, or sleep concerns, and I'll help you unpack
+            them.
           </div>
-          <div className="badge">Here to listen</div>
-        </header>
-
-        <div className="chat" ref={chatRef}>
-          {messages.map((message, index) => (
+        )}
+        {messages.map((m, idx) => (
+          <div
+            key={idx}
+            style={{
+              marginBottom: 8,
+              textAlign: m.role === "user" ? "right" : "left"
+            }}
+          >
             <div
-              key={`${message.sender}-${index}-${message.text.slice(0, 6)}`}
-              className={`row ${
-                message.sender === 'user' ? 'row-user' : 'row-assistant'
-              }`}
+              style={{
+                display: "inline-block",
+                padding: "6px 10px",
+                borderRadius: 8,
+                background:
+                  m.role === "user" ? "#007bff" : "rgba(0,0,0,0.05)",
+                color: m.role === "user" ? "#fff" : "#000",
+                maxWidth: "80%",
+                whiteSpace: "pre-wrap"
+              }}
             >
-              <div className={`bubble ${message.sender}`}>{message.text}</div>
+              {m.content}
             </div>
-          ))}
+          </div>
+        ))}
+        {loading && (
+          <div style={{ color: "#777", fontStyle: "italic" }}>
+            Assistant is thinking...
+          </div>
+        )}
+      </div>
 
-          {isLoading && (
-            <div className="row row-assistant">
-              <div className="bubble assistant thinking">I'm thinking...</div>
-            </div>
-          )}
-        </div>
-
-        {error ? <div className="error">{error}</div> : null}
-
-        <form
-          className="composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            sendMessage();
-          }}
+      <div>
+        <textarea
+          rows={3}
+          style={{ width: "100%", padding: 8, borderRadius: 8 }}
+          placeholder="Start by describing what's been stressing you. (Enter sends, Shift+Enter adds a new line)"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+        <button
+          onClick={handleSend}
+          disabled={loading || !input.trim()}
+          style={{ marginTop: 8, padding: "6px 12px" }}
         >
-          <textarea
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Share what's on your mind. Shift+Enter adds a new line."
-            rows={3}
-            disabled={isLoading}
-          />
-          <button type="submit" disabled={isLoading || !input.trim()}>
-            {isLoading ? 'Sending...' : 'Send'}
-          </button>
-        </form>
+          {loading ? "Sending..." : "Send"}
+        </button>
       </div>
     </div>
   );
